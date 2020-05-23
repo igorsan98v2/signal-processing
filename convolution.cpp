@@ -2,34 +2,25 @@
 #include <stdlib.h>
 #include "convolution.hpp"
 #include "math.h"
-
+/*
+@author Ihor Yutsyk, 2020, MAY
+*/
 typedef struct { int startX; int endX; int startY;int endY;} ZONE;
 double **selectZoneForAction(ZONE zone, double **matrix, int rows, int columns);
 double ** matrixSelection(int rows, int columns, double ** matrix, int matrixYlim, int matrixXlim, int xShift, int yShift);
 double multipleMatrixSum(double **m1, double **m2, int rows, int columns);
 void mirrorMatrix(double **matrix, int rows, int columns);
 ZONE selectSignalZone(double **matrix, int rows, int columns);
+ZONE selectMainZone(ZONE zoneX, ZONE zoneC, int xRows, int xColumns, int cRows, int cColumns);
 void swapSelection(double **matrix, double **selectedZone, ZONE zone);
 int signal::conv(double *x, int xlen, double *c, int clen, double *y){
-    double *pcstart = c;// Remember start address of coeff// w: state register, wlen: state register length 
-    int wlen = xlen;
-    double *w = (double*)calloc(wlen, sizeof(double));
- 
-    for (int i = 0; i < xlen; i++){
-        w[0] = *x;// Add newsample
-        for (int j = 0; j < clen; j++){
-            *y += *c * w[j];// Calculate convolution sumc++;}
-        // Update state registers
-            for (int k = 1; k < xlen; k++){
-                w[wlen -k] = w[wlen -k -1];// Shift old samples
-            }
-            c = pcstart;// Reset coeff pointer
-            x++;// Set px to point to new sample x(n) 
-            y++;// Set py to point to new output
-        }
-      
+  
+    double** ypArr = (double**)calloc(xlen + clen - 1, sizeof(double*));
+    conv2d(&x, 1, xlen, &c, 1, clen, ypArr);
+    for (int i = 0; i < xlen + clen - 1; i++) {
+        y[i] = ypArr[0][i];
     }
-   
+    freeMatrixByRows(ypArr, 1);
     return 0;
 
 }
@@ -38,39 +29,47 @@ int signal::conv2d(double **x, int xRows, int xColumns , double **c, int cRows, 
     int yColumns = xColumns + cColumns - 1;
     int yRows  = xRows + cRows - 1; 
     
-   
+    int selRows = xRows > cRows ? xRows: cRows;
+    int selCols = xColumns > cColumns ? xColumns : cColumns;
    
     for(int i =0; i < yRows; i++) {
         double *yRow =  (double*)calloc(yColumns, sizeof(double));
         for(int j = 0; j < yColumns; j++) {        
-            int xShifter = xColumns -1  - j;
-            int yShifter = xRows -1   - i;
+            int xShifter = selCols -1  - j;
+            int yShifter = selRows -1   - i;
 	 
             //select from x matrix
-            double **xSelection = matrixSelection(xRows, xColumns, x, xRows, xColumns, xShifter , yShifter);
+            double **xSelection = matrixSelection(selRows, selCols, x, xRows, xColumns, xShifter , yShifter);
             //select fromx c matrix
-            double **cSelection = matrixSelection(xRows, xColumns, c, cRows, cColumns, xShifter, yShifter);
-        
-            ZONE zoneC = selectSignalZone(cSelection, xRows, xColumns);
-            double **pureZone = selectZoneForAction(zoneC, cSelection, xRows, xColumns);
-            int pureRowsC = zoneC.endY - zoneC.startY +1;
-            int pureColumnsC = zoneC.endX - zoneC.startX +1;
-            mirrorMatrix(pureZone, pureRowsC, pureColumnsC);
-            swapSelection(cSelection, pureZone, zoneC);
+            double **cSelection = matrixSelection(selRows, selCols, c, cRows, cColumns, xShifter, yShifter);
+
+            ZONE zoneX = selectSignalZone(xSelection, selRows, selCols);
+            ZONE zoneC = selectSignalZone(cSelection, selRows, selCols);
+            ZONE zone = selectMainZone(zoneX, zoneC, xRows, xColumns, cRows, cColumns);
+           
+           
+            int pureRows = zone.endY - zone.startY + 1;
+            int pureColumns = zone.endX - zone.startX + 1;
+
+
+
+            if (zone.startX == selCols || zone.startY == selRows) {
+                continue; 
+            }
+
+
+            double** pureZone = selectZoneForAction(zone, cSelection, selRows, selCols);
+
+            mirrorMatrix(pureZone, pureRows, pureColumns);
+            swapSelection(cSelection, pureZone, zone);
           
-            ZONE zoneX = selectSignalZone(xSelection, xRows, xColumns);
-            int pureRowsX = zoneX.endY - zoneX.startY +1;
-            int pureColumnsX = zoneX.endX - zoneX.startX +1;
-            double ** correctedC = matrixSelection(xRows,xColumns,cSelection,xRows, xColumns, pureColumnsX-pureColumnsC, 0);     
+    
            
-            freeMatrixByRows(cSelection, xRows);
-            cSelection = correctedC;
+            yRow[j] = multipleMatrixSum(xSelection, cSelection, selRows, selCols);
            
-            yRow[j] = multipleMatrixSum(xSelection, cSelection, xRows, xColumns);
-           
-            freeMatrixByRows(xSelection, xRows);
-            freeMatrixByRows(cSelection, xRows);
-            freeMatrixByRows(pureZone, pureRowsC);
+            freeMatrixByRows(xSelection, selRows);
+            freeMatrixByRows(cSelection, selRows);
+            freeMatrixByRows(pureZone, pureRows);
         }
 
         y[i] = yRow;
@@ -92,9 +91,13 @@ double ** matrixSelection(int rows, int columns, double ** matrix, int matrixYli
     for(int i = -yShift;i<rows - yShift; i++){
         double *selectionRow =  (double*)calloc(columns, sizeof(double));
         for(int j = -xShift; j<columns - xShift; j++) {
-	      if(i < 0 || (i>matrixYlim-yShift) || j < 0 
-                || (j>matrixXlim-xShift) 
-                || i>=rows || j >=columns) {
+	      if(i < 0 
+                || i>matrixYlim-yShift
+                || j < 0 
+                || j > matrixXlim-xShift 
+                || i >=rows || j >=columns
+                || i >= matrixYlim
+                || j >=matrixXlim) {
                 selectionRow[j+xShift] = 0;
             } else {
                  selectionRow[j+xShift] = matrix[i][j];
@@ -120,6 +123,27 @@ double multipleMatrixSum(double **m1, double **m2, int rows, int columns){
     return sum;
 }
 
+ZONE selectMainZone(ZONE zoneX, ZONE zoneC, int xRows, int xColumns, int cRows, int cColumns) {
+    ZONE zone = {};
+    if (xRows > cRows) {
+        zone.startY = zoneX.startY;
+        zone.endY = zoneX.endY;
+    }
+    else {
+        zone.startY = zoneC.startY;
+        zone.endY = zoneC.endY;
+    }
+    if (xColumns > cColumns) {
+        zone.startX = zoneX.startX;
+        zone.endX = zoneX.endX;
+    }
+    else {
+        zone.startX = zoneC.startX;
+        zone.endX = zoneC.endX;
+    }
+    return zone;
+}
+
 ZONE selectSignalZone(double **matrix, int rows, int columns){
     int minX = columns;
     int minY = rows;
@@ -133,13 +157,16 @@ ZONE selectSignalZone(double **matrix, int rows, int columns){
                if(minX > j) {
                    minX = j;
                }
+
+               if (maxX < j) {
+                   maxX = j;
+               }
+
                if(minY > i) {
                    minY = i;
                }
-               if(maxX < j){
-                   maxX = j;
-               }
-               if(maxY < j){
+             
+               if(maxY < i){
                    maxY = i;
                }
            }
@@ -147,7 +174,12 @@ ZONE selectSignalZone(double **matrix, int rows, int columns){
     }
     if(maxY < minY) maxY = minY;
     if(maxX < minX) maxX = minX;
-    ZONE z = {startX:minX, endX:maxX, startY:minY, endY:maxY};
+    ZONE z;
+    z.startX = minX;
+    z.endX = maxX;
+    z.startY = minY;
+    z.endY = maxY;
+    //ZONE z = {startX:minX, endX:maxX, startY:minY, endY:maxY};
     return z;
 }
 
@@ -177,15 +209,19 @@ void mirrorMatrix(double **matrix, int rows, int columns){
     int i =0;
     int j =0;
     int mirroredRows = (rows/2. > 0) ? round(rows/2.) : 1;
+    int mirroredColumns = (columns/ 2. > 0) ? round(columns / 2.) : 0;
     for(i = 0; i < mirroredRows; i++) {
         double *temp = matrix[i];
         matrix[i] = matrix[rows - i - 1];
-        for(j = 0; j< columns/2; j++){
-            double tempVal = temp[j];
-            temp[j] = temp[columns - j - 1];
-            temp[columns - j - 1] = tempVal;
-        }
         matrix[rows - i - 1] = temp;
-    }  
+    }
+    
+    for (int i = 0; i < rows; i++) {
+        for (j = 0; j < mirroredColumns  ; j++) {
+            double tempVal = matrix[i][j];
+            matrix[i][j] = matrix[i][columns - j - 1];
+            matrix[i][columns - j - 1] = tempVal;
+        }
+    }
     return;   
 }

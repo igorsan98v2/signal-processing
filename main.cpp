@@ -14,34 +14,37 @@ int main()
     double  *x[3] = { 
         x1,
         x2,
-        x3,
+         x3,
      };
-    double c1[3] = {1,2};
-    double c2[3] = {3,4};
-    double c3[3] = {5,6};
+    double c1[2] = {1,2};
+    double c2[2] = {3,4};
+    double c3[2] = {5,6};
+ 
     double *c[3] = { 
         c1,
         c2,
-        c3
+        c3,
     };
         
    
-    int xColumns = 3; 
-    int xRows =   3;
-    int cColumns = 2;
-    int cRows =   3;
+    int xColumns = sizeof(x1) / sizeof(double);
+    int xRows = sizeof(x) / sizeof(double*);
+    int cColumns = sizeof(c1) / sizeof(double);
+    int cRows = sizeof(c) / sizeof(double*);
     int yColumns = xColumns +  cColumns- 1;
     int yRows  = xRows + cRows - 1; 
     double **y =  (double**)calloc(yRows, sizeof(double*));
+    
     std::cout << "conv2d:" <<std::endl; 	
-    signal::conv2d((double**)x,xRows,xColumns,(double**)c,cRows,cColumns,y);
+    signal::conv2d((double**)x, xRows, xColumns, c,cRows, cColumns, y);
   
-    for (int i = 0; i < yRows; i++){
-        for (int j = 0; j < yColumns; j++){   
-         printf("%3.2f\t",y[i][j]);
+    for (int i = 0; i < yRows; i++) {
+        for (int j = 0; j < yColumns; j++) {
+            printf("%3.2f\t", y[i][j]);
         }
-	printf("\n");
+        printf("\n");
     }
+    
     getchar();
     return 0; 
 }
