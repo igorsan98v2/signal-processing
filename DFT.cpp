@@ -5,19 +5,6 @@
 #include <time.h>
 #include "signal.hpp"
 
-int dft_jvb(double* x, int N, double* X_Re, double* X_Im, double* X_magnitude, double* X_phase);
-
-double* zeropad(double* x, int xlen, int newlen);
-
-int windowing(double* x, int xlen, int window_type, double* y); 
-
-int counter = 0;
-
-
-#define pi 4.0 * atan(1.0)
-
-
-
 int signal::dft(double* x, int N, double* X_Re, double* X_Im, double* X_magnitude, double* X_phase)
 
 {
@@ -32,8 +19,7 @@ int signal::dft(double* x, int N, double* X_Re, double* X_Im, double* X_magnitud
 
 			X_Re[m] += x[n] * cos(2 * pi * n * m / N);
 			X_Im[m] -= x[n] * sin(2 * pi * n * m / N);
-			counter++;
-
+			
 		}
 
 		X_magnitude[m] = sqrt(X_Re[m] * X_Re[m] + X_Im[m] *
